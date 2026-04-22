@@ -19,6 +19,11 @@ from resolve_silence_cut.fcpxml_cutter import (
     process_fcpxml_file,
 )
 
+DEFAULT_THRESHOLD_DB = -28.0
+DEFAULT_MIN_SILENCE_MS = 500
+DEFAULT_PAD_BEFORE_MS = 6
+DEFAULT_PAD_AFTER_MS = 6
+
 
 class TrackRunConfig:
     def __init__(
@@ -43,18 +48,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input", required=True, help="Input XML path exported from Resolve.")
     parser.add_argument("--output", required=True, help="Output XML path to write.")
     parser.add_argument("--track", type=int, help="1-based audio track index (A1=1).")
-    parser.add_argument("--threshold-db", type=float, default=-40.0, help="Silence threshold in dB.")
-    parser.add_argument("--min-silence-ms", type=int, default=250, help="Minimum silence duration in ms.")
-    parser.add_argument("--pad-before-ms", type=int, default=80, help="Padding before silence cut in ms.")
-    parser.add_argument("--pad-after-ms", type=int, default=120, help="Padding after silence cut in ms.")
+    parser.add_argument("--threshold-db", type=float, default=DEFAULT_THRESHOLD_DB, help="Silence threshold in dB.")
+    parser.add_argument("--min-silence-ms", type=int, default=DEFAULT_MIN_SILENCE_MS, help="Minimum silence duration in ms.")
+    parser.add_argument("--pad-before-ms", type=int, default=DEFAULT_PAD_BEFORE_MS, help="Padding before silence cut in ms.")
+    parser.add_argument("--pad-after-ms", type=int, default=DEFAULT_PAD_AFTER_MS, help="Padding after silence cut in ms.")
     parser.add_argument(
         "--track-config",
         action="append",
         default=[],
         help=(
             "Repeatable per-track config: "
-            "'track:thresholdDb:minSilenceMs:padBeforeMs:padAfterMs'. "
-            "Example: --track-config '1:-40:250:80:120' --track-config '2:-35:300:60:90'"
+            "'track[:thresholdDb[:minSilenceMs[:padBeforeMs[:padAfterMs]]]]'. "
+            "Omitted fields use defaults. "
+            "Examples: '1:-34', '2:::6', '3:-30:700:10:15'"
         ),
     )
     parser.add_argument(
@@ -72,21 +78,29 @@ def detect_xml_root(input_path: str) -> str:
 
 def parse_track_config(value: str) -> TrackRunConfig:
     parts = [part.strip() for part in value.split(":")]
-    if len(parts) != 5:
+    if len(parts) < 1 or len(parts) > 5:
         raise ValueError(
-            f"Invalid --track-config '{value}'. Expected 'track:thresholdDb:minSilenceMs:padBeforeMs:padAfterMs'."
+            f"Invalid --track-config '{value}'. Expected 'track[:thresholdDb[:minSilenceMs[:padBeforeMs[:padAfterMs]]]]'."
         )
     try:
         track = int(parts[0])
-        threshold_db = float(parts[1])
-        min_silence_ms = int(parts[2])
-        pad_before_ms = int(parts[3])
-        pad_after_ms = int(parts[4])
     except ValueError as exc:
         raise ValueError(f"Invalid numeric value in --track-config '{value}'.") from exc
 
     if track < 1:
         raise ValueError(f"Track must be >= 1 in --track-config '{value}'.")
+
+    tail = parts[1:]
+    while len(tail) < 4:
+        tail.append("")
+
+    try:
+        threshold_db = float(tail[0]) if tail[0] != "" else DEFAULT_THRESHOLD_DB
+        min_silence_ms = int(tail[1]) if tail[1] != "" else DEFAULT_MIN_SILENCE_MS
+        pad_before_ms = int(tail[2]) if tail[2] != "" else DEFAULT_PAD_BEFORE_MS
+        pad_after_ms = int(tail[3]) if tail[3] != "" else DEFAULT_PAD_AFTER_MS
+    except ValueError as exc:
+        raise ValueError(f"Invalid numeric value in --track-config '{value}'.") from exc
 
     return TrackRunConfig(
         track=track,

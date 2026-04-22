@@ -44,6 +44,10 @@ Multi-track with different settings in one run:
 
 `python3 scripts/run_xml_silence_cut.py --input "/path/in.xml" --output "/path/out.xml" --track-config "1:-40:250:80:120" --track-config "2:-35:300:60:90"`
 
+`--track-config` accepts omitted values and falls back to defaults (`-28:500:6:6`):
+
+`python3 scripts/run_xml_silence_cut.py --input "/path/in.xml" --output "/path/out.xml" --track-config "1:-34" --track-config "2:::6"`
+
 3. Import output XML back into Resolve.
 
 Dry-run:
