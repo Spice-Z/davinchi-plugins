@@ -1,0 +1,44 @@
+{
+  "name": "resolve-silence-cut",
+  "version": "1.0.0",
+  "description": "CLI for cutting silence on a single audio track in exported Resolve FCP7/FCPXML timelines",
+  "packageManager": "pnpm@10.33.0",
+  "type": "module",
+  "main": "src/cli/runXmlSilenceCut.ts",
+  "bin": {
+    "resolve-silence-cut": "./bin/resolve-silence-cut.mjs"
+  },
+  "scripts": {
+    "start": "tsx src/cli/runXmlSilenceCut.ts",
+    "dev": "tsx src/cli/runXmlSilenceCut.ts",
+    "resolve-silence-cut": "tsx src/cli/runXmlSilenceCut.ts",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "davinci-resolve",
+    "fcpxml",
+    "xmeml",
+    "silence"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "tsx": "^4.19.2",
+    "@xmldom/xmldom": "^0.8.10",
+    "commander": "^12.1.0",
+    "execa": "^9.5.2",
+    "fraction.js": "^4.3.7",
+    "node-wav": "^0.0.2",
+    "xpath": "^0.0.34",
+    "zod": "^3.24.1"
+  }
+}

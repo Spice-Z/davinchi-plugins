@@ -1,42 +1,3 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
-
-# Testing / coverage
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-.mypy_cache/
-.ruff_cache/
-.hypothesis/
-
 # Environment & secrets
 .env
 .env.*
@@ -51,3 +12,10 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Node.js
+node_modules/
+dist/
+*.tsbuildinfo
+package-lock.json
+pnpm-debug.log*
