@@ -19,3 +19,7 @@ dist/
 *.tsbuildinfo
 package-lock.json
 pnpm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
