@@ -17,6 +17,7 @@ CLI tool for cutting silence on a single selected audio track while preserving a
   - Pre-attack / post-release context in milliseconds
 - Removes silent regions inside each clip.
 - Keeps global timeline spacing (no ripple shift).
+- Optional: splits a chosen video track at the same cut boundaries while keeping all video segments.
 - Supports dry-run preview.
 
 ## Project Layout
@@ -76,6 +77,11 @@ Optional global tuning (applies to every track run in the same command):
 - `--post-release-ms` — keep extra context right after speech ends (default `60`, legacy alias: `--pad-after-ms`).
 - `--min-keep-ms` — minimum non-silent island to keep (default `120`). Increase to **`150`–`250`** when you see many tiny chopped blocks/noise islands.
 - `--zero-crossing-ms` — snap each keep-segment boundary to the nearest waveform zero-crossing within this radius (default `12`, set `0` to disable). Helps reduce hard boundary clicks.
+- `--split-video-track` — optional 1-based video track index (`V1=1`) to split at the same positions as audio cuts. Video clips are not deleted; they are only segmented.
+
+Example with matching video cuts:
+
+`pnpm start --input "ep10.xml" --output "ep10-cut.xml" --track 2 --split-video-track 1 --threshold-db -48 --min-silence-ms 900 --pre-attack-ms 80 --post-release-ms 200`
 
 Optional: emit JavaScript with `pnpm run build` if you want a compiled `dist/` tree (not required for normal use).
 

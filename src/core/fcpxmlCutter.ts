@@ -190,6 +190,11 @@ function collectAssetPaths(root: Element): Map<string, string> {
   return mapping;
 }
 
+function hasAudioRole(clip: Element): boolean {
+  const role = clip.getAttribute("audioRole");
+  return role != null && role.trim() !== "";
+}
+
 function laneToTrackOrder(laneValue: string | null | undefined): [number, number] {
   if (laneValue == null || laneValue.trim() === "") return [0, 0];
   const lane = Number.parseInt(laneValue, 10);
@@ -208,7 +213,17 @@ function compareLaneStrings(a: string, b: string): number {
 function collectAudioTrackLanes(spine: Element): string[] {
   const laneValues = new Set<string>();
   for (const clip of xpathElements(".//*[local-name()='asset-clip']", spine)) {
-    if (clip.getAttribute("ref") && clip.getAttribute("audioRole") != null) {
+    if (clip.getAttribute("ref") && hasAudioRole(clip)) {
+      laneValues.add(clip.getAttribute("lane") ?? "0");
+    }
+  }
+  return [...laneValues].sort(compareLaneStrings);
+}
+
+function collectVideoTrackLanes(spine: Element): string[] {
+  const laneValues = new Set<string>();
+  for (const clip of xpathElements(".//*[local-name()='asset-clip']", spine)) {
+    if (clip.getAttribute("ref") && !hasAudioRole(clip)) {
       laneValues.add(clip.getAttribute("lane") ?? "0");
     }
   }
@@ -290,6 +305,61 @@ function splitAssetClip(clip: Element, keepRanges: FrameRange[], fps: number): E
   return out;
 }
 
+function uniqueSortedCutFrames(cutFrames: Iterable<number>): number[] {
+  return [...new Set([...cutFrames].map((v) => Math.trunc(v)))].sort((a, b) => a - b);
+}
+
+function splitAssetClipByTimelineCuts(
+  clip: Element,
+  timelineCutFrames: number[],
+  fps: number,
+): Element[] {
+  const offset = parseFcpxTime(clip.getAttribute("offset") ?? "0s");
+  const start = parseFcpxTime(clip.getAttribute("start") ?? "0s");
+  const duration = parseFcpxTime(clip.getAttribute("duration") ?? "0s");
+  if (duration.compare(0) <= 0) {
+    return [clip];
+  }
+
+  const frameSec = new Fraction(1).div(new Fraction(String(fps)));
+  const timelineStartFrame = Math.round(Number(offset.div(frameSec)));
+  const clipDurationFrames = Math.round(Number(duration.div(frameSec)));
+  if (clipDurationFrames <= 0) {
+    return [clip];
+  }
+  const timelineEndFrame = timelineStartFrame + clipDurationFrames;
+  const clipCutFrames = uniqueSortedCutFrames(
+    timelineCutFrames.filter((frame) => frame > timelineStartFrame && frame < timelineEndFrame),
+  );
+  if (clipCutFrames.length === 0) {
+    return [clip];
+  }
+
+  const sourceStartFrame = Math.round(Number(start.div(frameSec)));
+  const boundaries = [...clipCutFrames, timelineEndFrame];
+  const out: Element[] = [];
+  const name = clip.getAttribute("name") ?? "clip";
+  let segmentTimelineStart = timelineStartFrame;
+  let idx = 0;
+  for (const boundary of boundaries) {
+    if (boundary <= segmentTimelineStart) continue;
+    idx += 1;
+    const segment = clip.cloneNode(true) as Element;
+    segment.setAttribute("name", `${name}_vc${idx}`);
+    const relativeStartFrame = segmentTimelineStart - timelineStartFrame;
+    const segmentDurationFrames = boundary - segmentTimelineStart;
+    const segmentOffset = offset.add(frameSec.mul(relativeStartFrame));
+    const segmentStart = start.add(frameSec.mul(relativeStartFrame));
+    const segmentDuration = frameSec.mul(segmentDurationFrames);
+    segment.setAttribute("offset", formatFcpxTime(segmentOffset));
+    segment.setAttribute("start", formatFcpxTime(segmentStart));
+    segment.setAttribute("duration", formatFcpxTime(segmentDuration));
+    out.push(segment);
+    segmentTimelineStart = boundary;
+  }
+  return out.length > 0 ? out : [clip];
+}
+
 export async function processFcpxmlFile(
   inputPath: string,
   outputPath: string,
@@ -299,6 +369,7 @@ export async function processFcpxmlFile(
   analyzer: FcpKeepRangesAnalyzer | null = null,
   log: ((message: string) => void) | null = null,
   targetLane: string | null = null,
+  videoTrackIndexToSplit: number | null = null,
 ): Promise<FcpXmlProcessResult> {
   const emit = (message: string) => {
     if (log) log(message);
@@ -353,7 +424,7 @@ export async function processFcpxmlFile(
     const el = n as Element;
     return (
       localTagName(el) === "asset-clip" &&
-      el.getAttribute("audioRole") != null &&
+      hasAudioRole(el) &&
       (el.getAttribute("lane") ?? "0") === resolvedLane
     );
   }) as Element[];
@@ -365,7 +436,8 @@ export async function processFcpxmlFile(
   const clipResults: FcpClipEditResult[] = [];
   let totalRemovedFrames = 0;
   let totalSegmentsCreated = 0;
-  const newChildren: Element[] = [];
+  const audioCutFrames = new Set<number>();
+  let newChildren: Element[] = [];
   let processedIndex = 0;
 
   for (const child of listChildNodes(spine)) {
@@ -375,7 +447,7 @@ export async function processFcpxmlFile(
       newChildren.push(el);
       continue;
     }
-    if (el.getAttribute("audioRole") == null) {
+    if (!hasAudioRole(el)) {
       newChildren.push(el);
       continue;
     }
@@ -416,6 +488,7 @@ export async function processFcpxmlFile(
     }
 
     const start = parseFcpxTime(el.getAttribute("start") ?? "0s");
+    const offset = parseFcpxTime(el.getAttribute("offset") ?? "0s");
     const duration = parseFcpxTime(el.getAttribute("duration") ?? "0s");
     if (duration.compare(0) <= 0) {
       emit(`[fcpxml]   Skipped '${name}': zero/negative duration.`);
@@ -425,6 +498,8 @@ export async function processFcpxmlFile(
 
     const sourceInFrame = Math.round(Number(start.div(frameSec)));
     const sourceOutFrame = Math.round(Number(start.add(duration).div(frameSec)));
+    const timelineInFrame = Math.round(Number(offset.div(frameSec)));
+    const timelineOutFrame = timelineInFrame + Math.max(0, sourceOutFrame - sourceInFrame);
 
     let keepRanges: FrameRange[];
     let removeRanges: FrameRange[];
@@ -461,6 +536,16 @@ export async function processFcpxmlFile(
     }
 
     const segments = splitAssetClip(el, keepRanges, fps);
+    for (const removeRange of removeRanges) {
+      const absStart = timelineInFrame + removeRange.start;
+      const absEnd = timelineInFrame + removeRange.end;
+      if (absStart > timelineInFrame && absStart < timelineOutFrame) {
+        audioCutFrames.add(absStart);
+      }
+      if (absEnd > timelineInFrame && absEnd < timelineOutFrame) {
+        audioCutFrames.add(absEnd);
+      }
+    }
     totalSegmentsCreated += segments.length;
     totalRemovedFrames += removedFrames;
     clipResults.push({
@@ -470,6 +555,55 @@ export async function processFcpxmlFile(
     });
     emit(`[fcpxml]   Cut '${name}': removed ${removedFrames} frames, created ${segments.length} segments.`);
     newChildren.push(...segments);
+  }
+
+  if (videoTrackIndexToSplit != null) {
+    const videoLanes = collectVideoTrackLanes(spine);
+    if (videoLanes.length === 0) {
+      throw new FcpXmlCutterError("No video asset-clip tracks found in fcpxml.");
+    }
+    if (videoTrackIndexToSplit < 1 || videoTrackIndexToSplit > videoLanes.length) {
+      throw new FcpXmlCutterError(
+        `Video track index ${videoTrackIndexToSplit} out of range. Video tracks: 1..${videoLanes.length}`,
+      );
+    }
+    const resolvedVideoLane = videoLanes[videoTrackIndexToSplit - 1]!;
+    const timelineCutFrames = uniqueSortedCutFrames(audioCutFrames);
+    if (timelineCutFrames.length === 0) {
+      emit(
+        `[fcpxml] Video split requested for V${videoTrackIndexToSplit} (lane ${resolvedVideoLane}), but no audio cut points were produced.`,
+      );
+    } else {
+      const splitChildren: Element[] = [];
+      let splitClipCount = 0;
+      for (const child of newChildren) {
+        if (child.nodeType !== 1) continue;
+        const el = child as Element;
+        if (localTagName(el) !== "asset-clip") {
+          splitChildren.push(el);
+          continue;
+        }
+        if (hasAudioRole(el)) {
+          splitChildren.push(el);
+          continue;
+        }
+        const lane = el.getAttribute("lane") ?? "0";
+        if (lane !== resolvedVideoLane) {
+          splitChildren.push(el);
+          continue;
+        }
+        const segments = splitAssetClipByTimelineCuts(el, timelineCutFrames, fps);
+        if (segments.length > 1) {
+          splitClipCount += 1;
+        }
+        splitChildren.push(...segments);
+      }
+      newChildren = splitChildren;
+      emit(
+        `[fcpxml] Video track V${videoTrackIndexToSplit} (lane ${resolvedVideoLane}) split at ` +
+          `${timelineCutFrames.length} audio cut points; ${splitClipCount} clips were segmented.`,
+      );
+    }
   }
 
   if (!dryRun) {
@@ -515,6 +649,31 @@ export function getFcpxmlTrackLanes(inputPath: string): string[] {
   const lanes = collectAudioTrackLanes(spine);
   if (lanes.length === 0) {
     throw new FcpXmlCutterError("No audio asset-clip tracks found in fcpxml.");
+  }
+  return lanes;
+}
+
+export function getFcpxmlVideoTrackLanes(inputPath: string): string[] {
+  if (!existsSync(inputPath)) {
+    throw new FcpXmlCutterError(`Input XML does not exist: ${inputPath}`);
+  }
+  const doc = parseXmlDocument(inputPath);
+  const root = doc.documentElement!;
+  if (localTagName(root) !== "fcpxml") {
+    throw new FcpXmlCutterError("Root is not fcpxml.");
+  }
+  const sequences = xpathElements(".//*[local-name()='sequence']", root);
+  const sequence = sequences[0];
+  if (!sequence) {
+    throw new FcpXmlCutterError("Could not find <sequence> in fcpxml.");
+  }
+  const spine = findChildElement(sequence, "spine");
+  if (!spine) {
+    throw new FcpXmlCutterError("Could not find <spine> in fcpxml sequence.");
+  }
+  const lanes = collectVideoTrackLanes(spine);
+  if (lanes.length === 0) {
+    throw new FcpXmlCutterError("No video asset-clip tracks found in fcpxml.");
   }
   return lanes;
 }

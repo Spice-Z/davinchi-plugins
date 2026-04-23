@@ -217,6 +217,12 @@ async function run(): Promise<number> {
     .option(
       "--dry-run",
       "Analyze and print summary only, without writing modified XML.",
+    )
+    .addOption(
+      new Option(
+        "--split-video-track <n>",
+        "Optional 1-based video track index to split at audio cut points (keeps all video segments).",
+      ).argParser((v) => Number.parseInt(v, 10)),
     );
 
   program.parse(process.argv);
@@ -233,6 +239,7 @@ async function run(): Promise<number> {
     zeroCrossingMs: string;
     trackConfig: string[];
     dryRun?: boolean;
+    splitVideoTrack?: number;
   }>();
 
   let runConfigs: TrackRunConfig[];
@@ -263,6 +270,11 @@ async function run(): Promise<number> {
     `Starting silence cut: input='${args.input}', output='${args.output}', dry_run=${args.dryRun}`,
   );
   console.log(`Track runs: ${runConfigs.length}`);
+  if (raw.splitVideoTrack != null) {
+    console.log(
+      `Video split enabled: V${raw.splitVideoTrack} will be cut at the same positions as detected audio cuts (video is not removed).`,
+    );
+  }
 
   const log = (message: string) => {
     console.log(message);
@@ -336,6 +348,7 @@ async function run(): Promise<number> {
           args.dryRun,
           null,
           log,
+          raw.splitVideoTrack ?? null,
         );
         results.push(result);
       } else {
@@ -348,6 +361,7 @@ async function run(): Promise<number> {
           null,
           log,
           pinnedLanes.get(cfg.track) ?? null,
+          raw.splitVideoTrack ?? null,
         );
         results.push(result);
       }

@@ -213,6 +213,52 @@ export function splitClipitemByKeepRanges(
   return newNodes;
 }
 
+function uniqueSortedCutFrames(cutFrames: Iterable<number>): number[] {
+  return [...new Set([...cutFrames].map((v) => Math.trunc(v)))].sort((a, b) => a - b);
+}
+
+export function splitClipitemByTimelineCuts(
+  clipitem: Element,
+  timelineCutFrames: number[],
+  clipIdx: number,
+): Element[] {
+  const start = getIntChildText(clipitem, "start");
+  const end = getIntChildText(clipitem, "end");
+  const inFrame = getIntChildText(clipitem, "in");
+  if (start === null || end === null || inFrame === null || end <= start) {
+    return [clipitem];
+  }
+
+  const cutFrames = uniqueSortedCutFrames(
+    timelineCutFrames.filter((frame) => frame > start && frame < end),
+  );
+  if (cutFrames.length === 0) {
+    return [clipitem];
+  }
+
+  const clipId = clipitem.getAttribute("id") ?? `clipitem_${clipIdx}`;
+  const boundaries = [...cutFrames, end];
+  const newNodes: Element[] = [];
+  let segmentStart = start;
+  let segmentIn = inFrame;
+  let segIdx = 0;
+  for (const boundary of boundaries) {
+    if (boundary <= segmentStart) continue;
+    segIdx += 1;
+    const segment = clipitem.cloneNode(true) as Element;
+    segment.setAttribute("id", `${clipId}_vc${segIdx}`);
+    setIntChildText(segment, "start", segmentStart);
+    setIntChildText(segment, "end", boundary);
+    setIntChildText(segment, "in", segmentIn);
+    setIntChildText(segment, "out", segmentIn + (boundary - segmentStart));
+    setIntChildText(segment, "duration", boundary - segmentStart);
+    newNodes.push(segment);
+    segmentIn += boundary - segmentStart;
+    segmentStart = boundary;
+  }
+  return newNodes.length > 0 ? newNodes : [clipitem];
+}
+
 export async function processXmemlFile(
   inputPath: string,
   outputPath: string,
@@ -221,6 +267,7 @@ export async function processXmemlFile(
   dryRun: boolean,
   analyzer: KeepRangesAnalyzer | null = null,
   log: ((message: string) => void) | null = null,
+  videoTrackIndexToSplit: number | null = null,
 ): Promise<XmlProcessResult> {
   const emit = (message: string) => {
     if (log) log(message);
@@ -275,6 +322,7 @@ export async function processXmemlFile(
   const clipResults: ClipEditResult[] = [];
   let totalRemovedFrames = 0;
   let totalSegmentsCreated = 0;
+  const audioCutFrames = new Set<number>();
 
   const newChildren: Element[] = [];
   let clipCounter = 0;
@@ -355,6 +403,16 @@ export async function processXmemlFile(
     }
 
     const splitNodes = splitClipitemByKeepRanges(el, keepRanges, clipCounter);
+    for (const removeRange of removeRanges) {
+      const absStart = start + removeRange.start;
+      const absEnd = start + removeRange.end;
+      if (absStart > start && absStart < end) {
+        audioCutFrames.add(absStart);
+      }
+      if (absEnd > start && absEnd < end) {
+        audioCutFrames.add(absEnd);
+      }
+    }
     totalSegmentsCreated += splitNodes.length;
     totalRemovedFrames += removedFrames;
     clipResults.push({
@@ -369,6 +427,55 @@ export async function processXmemlFile(
     newChildren.push(...splitNodes);
   }
 
+  let videoTrackReplacement: { track: Element; children: Element[] } | null = null;
+  if (videoTrackIndexToSplit != null) {
+    const video = media ? findChildElement(media, "video") : null;
+    if (!video) {
+      throw new XmlCutterError("No video tracks found in XML sequence.");
+    }
+    const videoTracks = listChildNodes(video).filter(
+      (n) => n.nodeType === 1 && localTagName(n as Element) === "track",
+    ) as Element[];
+    if (videoTracks.length === 0) {
+      throw new XmlCutterError("No video tracks found in XML sequence.");
+    }
+    if (videoTrackIndexToSplit < 1 || videoTrackIndexToSplit > videoTracks.length) {
+      throw new XmlCutterError(
+        `Video track index ${videoTrackIndexToSplit} out of range. Video tracks: 1..${videoTracks.length}`,
+      );
+    }
+    const timelineCutFrames = uniqueSortedCutFrames(audioCutFrames);
+    if (timelineCutFrames.length === 0) {
+      emit(
+        `[xmeml] Video split requested for V${videoTrackIndexToSplit}, but no audio cut points were produced.`,
+      );
+    } else {
+      const targetVideoTrack = videoTracks[videoTrackIndexToSplit - 1]!;
+      const splitChildren: Element[] = [];
+      let videoClipCounter = 0;
+      let splitClipCount = 0;
+      for (const child of listChildNodes(targetVideoTrack)) {
+        if (child.nodeType !== 1) continue;
+        const el = child as Element;
+        if (localTagName(el) !== "clipitem") {
+          splitChildren.push(el);
+          continue;
+        }
+        videoClipCounter += 1;
+        const segments = splitClipitemByTimelineCuts(el, timelineCutFrames, videoClipCounter);
+        if (segments.length > 1) {
+          splitClipCount += 1;
+        }
+        splitChildren.push(...segments);
+      }
+      videoTrackReplacement = { track: targetVideoTrack, children: splitChildren };
+      emit(
+        `[xmeml] Video track V${videoTrackIndexToSplit} split at ${timelineCutFrames.length} audio cut points; ` +
+          `${splitClipCount} clips were segmented.`,
+      );
+    }
+  }
+
   if (!dryRun) {
     emit("[xmeml] Writing modified XML...");
     while (targetTrack.firstChild) {
@@ -376,6 +483,14 @@ export async function processXmemlFile(
     }
     for (const ch of newChildren) {
       targetTrack.appendChild(ch);
+    }
+    if (videoTrackReplacement) {
+      while (videoTrackReplacement.track.firstChild) {
+        videoTrackReplacement.track.removeChild(videoTrackReplacement.track.firstChild);
+      }
+      for (const ch of videoTrackReplacement.children) {
+        videoTrackReplacement.track.appendChild(ch);
+      }
     }
     writeXmlDocument(doc, outputPath);
     emit(`[xmeml] Wrote output: ${outputPath}`);
