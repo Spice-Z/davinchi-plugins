@@ -24,7 +24,6 @@ CLI tool for cutting silence on a single selected audio track while preserving a
 
 - `src/cli/runXmlSilenceCut.ts` — CLI entry (XML mode).
 - `src/core/` — silence detection, FFmpeg extract, xmeml/fcpxml cutters.
-- `bin/resolve-silence-cut.mjs` — bin shim that runs **tsx** on the TypeScript entry.
 - `tests/*.test.ts` — Vitest tests.
 
 ## Requirements
@@ -44,15 +43,9 @@ Single track (recommended — `pnpm start` runs tsx on `src/cli/runXmlSilenceCut
 
 `pnpm start --input "/path/in.xml" --output "/path/out.xml" --track 1 --threshold-db -40 --min-silence-ms 250 --pre-attack-ms 80 --post-release-ms 120 --min-keep-ms 120 --zero-crossing-ms 12`
 
-Equivalent script name:
-
-`pnpm run resolve-silence-cut --input "/path/in.xml" --output "/path/out.xml" --track 1 --threshold-db -40 --min-silence-ms 250 --pre-attack-ms 80 --post-release-ms 120 --min-keep-ms 120 --zero-crossing-ms 12`
-
-Explicit tsx invocation (same behavior):
+Or run **tsx** on the entry file directly (same behavior):
 
 `pnpm exec tsx src/cli/runXmlSilenceCut.ts --input "/path/in.xml" --output "/path/out.xml" --track 1 --threshold-db -40 --min-silence-ms 250 --pre-attack-ms 80 --post-release-ms 120 --min-keep-ms 120 --zero-crossing-ms 12`
-
-When this package is installed as a dependency, the `resolve-silence-cut` bin uses the same tsx-based launcher (`bin/resolve-silence-cut.mjs`).
 
 CLI help:
 

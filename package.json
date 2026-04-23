@@ -5,13 +5,9 @@
   "packageManager": "pnpm@10.33.0",
   "type": "module",
   "main": "src/cli/runXmlSilenceCut.ts",
-  "bin": {
-    "resolve-silence-cut": "./bin/resolve-silence-cut.mjs"
-  },
   "scripts": {
     "start": "tsx src/cli/runXmlSilenceCut.ts",
     "dev": "tsx src/cli/runXmlSilenceCut.ts",
-    "resolve-silence-cut": "tsx src/cli/runXmlSilenceCut.ts",
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
