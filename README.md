@@ -86,6 +86,19 @@ Example:
 
 `pnpm start --input "ep10.xml" --output "ep10-cut.xml" --analysis-frame-ms 20 --min-keep-ms 180 --zero-crossing-ms 12 --track-config "2:-50:900:80:200:180" --track-config "3:-50:900:80:200:180"`
 
+Multi-track with shorter per-track config (`track:thresholdDb:minSilenceMs`; other values use defaults), analysis tuning, and splitting V1 at audio cut boundaries:
+
+```bash
+pnpm start \
+  --input "/Users/you/Desktop/ep10.xml" \
+  --output "/Users/you/Desktop/ep10_cut.xml" \
+  --analysis-frame-ms 20 \
+  --track-config "2:-32:600" \
+  --track-config "3:-36:600" \
+  --zero-crossing-ms 12 \
+  --split-video-track 1
+```
+
 Run tests:
 
 `pnpm test`
