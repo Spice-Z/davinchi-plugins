@@ -1,6 +1,6 @@
-import { unlinkSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { existsSync, unlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { homedir, tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 import { Command, Option } from "commander";
 import { z } from "zod";
@@ -51,6 +51,24 @@ function collectString(
 function detectXmlRootTag(inputPath: string): string {
   const doc = parseXmlDocument(inputPath);
   return localTagName(doc.documentElement!);
+}
+
+function validateOutputPath(outputPath: string): void {
+  const outputDir = dirname(outputPath);
+  if (existsSync(outputDir)) {
+    return;
+  }
+  if (outputPath.startsWith("/Users/you/")) {
+    throw new Error(
+      `Output directory does not exist: ${outputDir}. ` +
+        `Looks like a placeholder path was used. Replace '/Users/you' with '${homedir()}' ` +
+        "or use $HOME in your command.",
+    );
+  }
+  throw new Error(
+    `Output directory does not exist: ${outputDir}. ` +
+      "Create the directory first or choose an existing output path.",
+  );
 }
 
 function parseTrackConfig(value: string): ParsedTrackConfigLine {
@@ -265,6 +283,19 @@ async function run(): Promise<number> {
     output: raw.output,
     dryRun: Boolean(raw.dryRun),
   };
+
+  if (!args.dryRun) {
+    try {
+      validateOutputPath(args.output);
+    } catch (e) {
+      if (e instanceof Error) {
+        console.error(`Error: ${e.message}`);
+      } else {
+        console.error(`Error: ${e}`);
+      }
+      return 1;
+    }
+  }
 
   console.log(
     `Starting silence cut: input='${args.input}', output='${args.output}', dry_run=${args.dryRun}`,

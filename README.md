@@ -90,8 +90,8 @@ Multi-track with shorter per-track config (`track:thresholdDb:minSilenceMs`; oth
 
 ```bash
 pnpm start \
-  --input "/Users/you/Desktop/ep10.xml" \
-  --output "/Users/you/Desktop/ep10_cut.xml" \
+  --input "$HOME/Desktop/ep10.xml" \
+  --output "$HOME/Desktop/ep10_cut.xml" \
   --analysis-frame-ms 20 \
   --track-config "2:-32:600" \
   --track-config "3:-36:600" \
